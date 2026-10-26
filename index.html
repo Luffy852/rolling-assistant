@@ -1,0 +1,1428 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='88'%3E%F0%9F%8E%B2%3C/text%3E%3C/svg%3E">
+<title>电子掷骰器</title>
+<style>
+* {
+margin: 0;
+padding: 0;
+box-sizing: border-box;
+}
+/* 桌面端：页面整体不滚动，只有内部列表区滚动 */
+html, body {
+height: 100%;
+overflow: hidden;
+}
+body {
+font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+color: #333;
+}
+.app {
+height: 100dvh;
+display: flex;
+flex-direction: column;
+gap: 14px;
+padding: 14px 20px 18px;
+}
+.app-header {
+flex-shrink: 0;
+}
+h1 {
+text-align: center;
+color: white;
+text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+font-size: 2.1em;
+margin-bottom: 12px;
+}
+.mode-switch {
+display: flex;
+justify-content: center;
+gap: 14px;
+}
+.mode-btn {
+padding: 11px 34px;
+font-size: 17px;
+border: none;
+border-radius: 50px;
+cursor: pointer;
+transition: all 0.3s ease;
+background: rgba(255,255,255,0.75);
+color: #667eea;
+font-weight: bold;
+box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+}
+.mode-btn.active {
+background: #fff;
+color: #764ba2;
+transform: scale(1.05);
+box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+}
+.mode-btn:hover:not(.active) {
+background: #f0f0f0;
+}
+.app-main {
+flex: 1;
+min-height: 0;
+}
+.panel {
+display: none;
+height: 100%;
+gap: 16px;
+}
+.panel.active {
+display: flex;
+}
+.col-left {
+flex: 1;
+min-width: 0;
+display: flex;
+flex-direction: column;
+gap: 14px;
+min-height: 0;
+}
+.col-right {
+width: 350px;
+flex-shrink: 0;
+display: flex;
+flex-direction: column;
+gap: 14px;
+min-height: 0;
+}
+.card {
+background: white;
+border-radius: 18px;
+padding: 18px;
+box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+}
+.card-fixed {
+flex-shrink: 0;
+}
+.card-scroll {
+flex: 1;
+min-height: 0;
+display: flex;
+flex-direction: column;
+}
+.card-title {
+font-size: 16px;
+font-weight: bold;
+color: #333;
+margin-bottom: 12px;
+display: flex;
+align-items: center;
+gap: 10px;
+flex-wrap: wrap;
+flex-shrink: 0;
+}
+.card-title .spacer {
+margin-left: auto;
+}
+.scroll-area {
+flex: 1;
+min-height: 0;
+overflow-y: auto;
+padding-right: 6px;
+}
+/* 结果卡：高度设上限 + 明细区内部滚动，保证下方说明卡永不被挤出视口 */
+.card-result {
+display: flex;
+flex-direction: column;
+min-height: 0;
+max-height: 46vh;
+}
+.result-detail {
+flex: 1;
+min-height: 0;
+overflow-y: auto;
+}
+.card-help {
+overflow-y: auto;
+}
+/* 指令输入 */
+.command-input-area {
+display: flex;
+gap: 12px;
+}
+.command-input {
+flex: 1;
+padding: 13px 16px;
+font-size: 18px;
+border: 2px solid #e0e0e0;
+border-radius: 10px;
+transition: border-color 0.3s;
+min-width: 0;
+}
+.command-input:focus {
+outline: none;
+border-color: #667eea;
+}
+.roll-btn {
+padding: 13px 30px;
+background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+color: white;
+border: none;
+border-radius: 10px;
+font-size: 17px;
+font-weight: bold;
+cursor: pointer;
+transition: transform 0.2s;
+white-space: nowrap;
+}
+.roll-btn:hover {
+transform: translateY(-2px);
+}
+.roll-btn:active {
+transform: translateY(0);
+}
+/* 优势 / 劣势 */
+.opts-row {
+display: flex;
+align-items: center;
+gap: 18px;
+flex-wrap: wrap;
+}
+.chk {
+display: inline-flex;
+align-items: center;
+gap: 6px;
+font-size: 14px;
+color: #555;
+cursor: pointer;
+user-select: none;
+white-space: nowrap;
+}
+.chk input {
+width: 16px;
+height: 16px;
+cursor: pointer;
+accent-color: #764ba2;
+}
+.opts-hint {
+font-size: 13px;
+color: #c0392b;
+font-weight: bold;
+}
+.opts-hint.normal {
+color: #999;
+font-weight: normal;
+}
+/* 勾了模式却没选适用范围：必须醒目，否则就是「勾了却没生效」的静默失效 */
+.opts-hint.warn {
+color: #e67e22;
+font-weight: bold;
+}
+.opts-bar {
+display: flex;
+align-items: center;
+gap: 14px;
+flex-wrap: wrap;
+flex-shrink: 0;
+padding: 0 2px 10px;
+}
+.scope-label, .scope-sep {
+font-size: 13px;
+color: #999;
+}
+.scope-sep {
+margin-left: 4px;
+}
+/* 历史记录 */
+.history-list {
+display: flex;
+flex-direction: column;
+gap: 8px;
+}
+.history-item {
+padding: 10px 14px;
+border-radius: 10px;
+background: #f8f9fa;
+cursor: pointer;
+transition: background 0.2s;
+border: 2px solid transparent;
+}
+.history-item:hover {
+background: #eef0fb;
+}
+.history-item.active {
+background: #eef0fb;
+border-color: #667eea;
+}
+.history-head {
+display: flex;
+align-items: baseline;
+gap: 10px;
+}
+.h-index {
+font-size: 12px;
+color: #999;
+min-width: 24px;
+}
+.h-cmd {
+font-size: 15px;
+font-weight: bold;
+color: #333;
+word-break: break-all;
+}
+.h-total {
+margin-left: auto;
+font-size: 20px;
+font-weight: bold;
+color: #764ba2;
+white-space: nowrap;
+}
+.h-detail {
+font-size: 12px;
+color: #777;
+margin-top: 4px;
+word-break: break-all;
+line-height: 1.5;
+}
+.h-time {
+font-size: 11px;
+color: #aaa;
+white-space: nowrap;
+}
+.mode-tag {
+display: inline-block;
+font-size: 11px;
+font-weight: bold;
+padding: 2px 8px;
+border-radius: 20px;
+background: #764ba2;
+color: #fff;
+vertical-align: middle;
+}
+.mode-tag.adv {
+background: #27ae60;
+}
+.mode-tag.dis {
+background: #c0392b;
+}
+.mode-tag.cancel {
+background: #95a5a6;
+}
+.empty-tip {
+color: #999;
+font-size: 14px;
+padding: 10px 4px;
+}
+.mini-btn {
+padding: 5px 12px;
+font-size: 12px;
+border: 1px solid #ddd;
+background: white;
+color: #888;
+border-radius: 6px;
+cursor: pointer;
+}
+.mini-btn:hover {
+color: #e74c3c;
+border-color: #e74c3c;
+}
+/* 动作行：名称 / 按钮 / 主指令 / 主结果 / 副指令 / 副结果
+   栏位宽度只在这里定义一次，表头与数据行共用，杜绝错位 */
+#action-panel {
+/* 按钮列必须是固定值：表头该格为空，若用 auto 会因内容宽度不同而错位 */
+--act-cols: 1.15fr 68px 1fr 64px 1fr 64px;
+}
+.action-list {
+display: flex;
+flex-direction: column;
+gap: 10px;
+}
+.action-head {
+display: grid;
+grid-template-columns: var(--act-cols);
+gap: 9px;
+align-items: center;
+padding: 0 12px 2px;
+font-size: 12px;
+color: #8a8a9a;
+font-weight: bold;
+/* 放进滚动区内才与数据行同宽；sticky 保证滚动时表头常驻 */
+position: sticky;
+top: 0;
+z-index: 2;
+background: #fff;
+padding-bottom: 6px;
+}
+.action-head span {
+white-space: nowrap;
+overflow: hidden;
+text-overflow: ellipsis;
+}
+.action-head .h-mres, .action-head .h-sres {
+text-align: center;
+}
+.action-row {
+display: grid;
+grid-template-columns: var(--act-cols);
+grid-template-areas: "name btn main mres sub sres";
+gap: 9px;
+align-items: center;
+background: #f8f9fa;
+padding: 11px 12px;
+border-radius: 10px;
+}
+.a-name { grid-area: name; }
+.a-btn { grid-area: btn; }
+.a-main { grid-area: main; }
+.a-mres { grid-area: mres; }
+.a-sub { grid-area: sub; }
+.a-sres { grid-area: sres; }
+.action-row input {
+padding: 10px 12px;
+font-size: 15px;
+border: 2px solid #e0e0e0;
+border-radius: 8px;
+background: white;
+min-width: 0;
+width: 100%;
+}
+.action-row input:focus {
+outline: none;
+border-color: #667eea;
+}
+.action-btn {
+padding: 10px 18px;
+width: 100%;
+background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+color: white;
+border: none;
+border-radius: 8px;
+font-size: 14px;
+font-weight: bold;
+cursor: pointer;
+transition: transform 0.2s;
+white-space: nowrap;
+}
+.action-btn:hover {
+transform: translateY(-2px);
+}
+.action-result {
+background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+color: white;
+padding: 10px 0;
+border-radius: 8px;
+font-size: 18px;
+font-weight: bold;
+text-align: center;
+box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+}
+.action-result.sub {
+background: #f0f0f0;
+color: #999;
+box-shadow: none;
+}
+.action-result.sub.filled {
+background: linear-gradient(135deg, #8a94d8 0%, #9b6fb5 100%);
+color: #fff;
+}
+/* 结果展示 */
+.result-total {
+font-size: 42px;
+font-weight: bold;
+color: #764ba2;
+line-height: 1.1;
+margin: 4px 0 8px;
+display: flex;
+align-items: center;
+gap: 10px;
+flex-wrap: wrap;
+}
+.result-sub {
+font-size: 14px;
+color: #666;
+margin-bottom: 10px;
+word-break: break-all;
+}
+.result-name {
+font-size: 17px;
+font-weight: bold;
+color: #333;
+margin-bottom: 10px;
+word-break: break-all;
+}
+.error-msg {
+color: #e74c3c;
+font-size: 16px;
+font-weight: bold;
+}
+.blk {
+padding: 10px 0;
+border-top: 1px dashed #e0e0e0;
+}
+.blk:first-child {
+border-top: none;
+padding-top: 0;
+}
+/* 主 / 副 用色块标签区分，不再重复打印指令文本（指令本身已在 chips 里） */
+.blk-head {
+font-size: 13px;
+font-weight: bold;
+color: #764ba2;
+margin-bottom: 4px;
+display: flex;
+align-items: center;
+gap: 6px;
+}
+.blk-head::before {
+content: attr(data-tag);
+display: inline-block;
+min-width: 20px;
+padding: 1px 7px;
+border-radius: 5px;
+background: #764ba2;
+color: #fff;
+font-size: 12px;
+text-align: center;
+}
+.blk-head.sub::before {
+background: #8a94d8;
+}
+.blk-muted {
+font-size: 13px;
+color: #999;
+padding: 10px 0;
+border-top: 1px dashed #e0e0e0;
+}
+/* 明细：每个 pass 压成一行，chips 承载各骰组点数 */
+.pass-row {
+display: flex;
+align-items: center;
+gap: 8px;
+padding: 6px 8px;
+border-radius: 8px;
+background: #f8f9fa;
+margin-bottom: 5px;
+opacity: 0.6;
+}
+.pass-row.used {
+background: #eef0fb;
+opacity: 1;
+box-shadow: inset 0 0 0 2px #667eea;
+}
+.pass-row.single {
+background: transparent;
+padding-left: 0;
+opacity: 1;
+}
+.pass-label {
+font-size: 12px;
+font-weight: bold;
+color: #777;
+white-space: nowrap;
+flex-shrink: 0;
+min-width: 38px;
+}
+.pass-row.used .pass-label {
+color: #667eea;
+}
+.chips {
+flex: 1;
+min-width: 0;
+display: flex;
+flex-wrap: wrap;
+gap: 5px;
+}
+.chip {
+display: inline-flex;
+align-items: baseline;
+gap: 4px;
+padding: 2px 7px;
+border-radius: 6px;
+background: #fff;
+border: 1px solid #e3e3ef;
+font-size: 13px;
+color: #333;
+white-space: nowrap;
+}
+.chip i {
+font-style: normal;
+font-size: 11px;
+color: #999;
+}
+.chip b {
+font-weight: bold;
+color: #333;
+}
+.pass-sum {
+font-size: 15px;
+font-weight: bold;
+color: #764ba2;
+white-space: nowrap;
+flex-shrink: 0;
+}
+.pass-mark {
+font-size: 11px;
+padding: 1px 7px;
+border-radius: 20px;
+background: #27ae60;
+color: #fff;
+flex-shrink: 0;
+}
+.pass-mark.drop {
+background: #c8c8d4;
+}
+.final-row {
+font-size: 13px;
+color: #555;
+padding: 6px 8px 2px;
+line-height: 1.6;
+}
+.final-row b {
+color: #764ba2;
+font-size: 15px;
+}
+.help-info {
+padding: 15px;
+background: #e7f3ff;
+border-radius: 10px;
+font-size: 13px;
+color: #0066cc;
+line-height: 1.7;
+}
+.help-info h3 {
+margin-bottom: 8px;
+color: #004499;
+font-size: 14px;
+}
+.help-info code {
+background: #003366;
+color: #fff;
+padding: 2px 6px;
+border-radius: 3px;
+}
+.save-state {
+font-size: 12px;
+color: #888;
+}
+.save-state.warn {
+color: #c0392b;
+font-weight: bold;
+}
+/* 窄屏：单列，按指定顺序重排；右栏的 sticky 一并取消（每行自带结果，不再需要） */
+@media (max-width: 900px) {
+html, body {
+height: auto;
+overflow: auto;
+}
+.app {
+height: auto;
+min-height: 100dvh;
+gap: 12px;
+padding: 14px 14px 18px;
+}
+.panel.active {
+flex-direction: column;
+}
+.col-left, .col-right {
+display: contents;
+}
+.card-input { order: 1; }
+.card-opts { order: 2; }
+.card-result { order: 3; }
+.card-history { order: 4; }
+.card-help { order: 5; }
+.card-scroll {
+flex: none;
+}
+.card-result {
+max-height: none;
+}
+.result-detail {
+overflow: visible;
+}
+.scroll-area {
+max-height: 46vh;
+}
+h1 {
+font-size: 1.7em;
+}
+#action-panel {
+--act-cols: 1fr 76px;
+}
+/* 窄屏动作行变 3 行 2 列，栏位表头不再对应，隐藏 */
+.action-head {
+display: none;
+}
+.action-row {
+grid-template-areas:
+"name btn"
+"main mres"
+"sub  sres";
+}
+.action-btn {
+padding: 10px 0;
+width: 100%;
+}
+}
+</style>
+</head>
+<body>
+<div class="app">
+<header class="app-header">
+<h1>🎲 电子掷骰器</h1>
+<div class="mode-switch">
+<button class="mode-btn active" id="btn-mode-command">指令模式</button>
+<button class="mode-btn" id="btn-mode-action">动作模式</button>
+</div>
+</header>
+<main class="app-main">
+<!-- ============ 指令模式 ============ -->
+<section class="panel active" id="command-panel">
+<div class="col-left">
+<div class="card card-input card-fixed">
+<div class="command-input-area">
+<input type="text" class="command-input" id="command-input"
+placeholder="输入掷骰指令，例如: 2d6+3, 1d20+5, 4d8+1d4+2" />
+<button class="roll-btn" id="btn-roll-command">掷骰</button>
+</div>
+</div>
+<div class="card card-opts card-fixed">
+<div class="opts-row">
+<label class="chk"><input type="checkbox" id="chk-adv-cmd" /> 优势（投两次取高）</label>
+<label class="chk"><input type="checkbox" id="chk-dis-cmd" /> 劣势（投两次取低）</label>
+<span class="opts-hint normal" id="hint-cmd">未启用，正常投掷</span>
+</div>
+</div>
+<div class="card card-history card-scroll">
+<div class="card-title">
+<span>投掷历史</span>
+<span class="spacer"></span>
+<span class="h-time" id="history-count"></span>
+<button class="mini-btn" id="btn-clear-history">清空</button>
+</div>
+<div class="scroll-area">
+<div class="history-list" id="history-list"></div>
+</div>
+</div>
+</div>
+<div class="col-right">
+<div class="card card-result card-fixed">
+<div class="card-title">详细结果</div>
+<div class="result-total" id="command-total">--</div>
+<div class="result-sub" id="command-sub">等待指令...</div>
+<div class="result-detail" id="command-detail"></div>
+</div>
+<div class="card card-help card-scroll">
+<div class="help-info">
+<h3>📋 指令格式说明</h3>
+<p><strong>基本格式：</strong><code>xdy+z</code></p>
+<ul style="margin-left: 18px; margin-top: 6px;">
+<li><code>x</code>: 骰子数量（正整数，省略为 1）</li>
+<li><code>y</code>: 骰子面数（任意，<code>1d7</code> 也支持）</li>
+<li><code>z</code>: 调整值（可正可负，可省略）</li>
+</ul>
+<p style="margin-top: 8px;"><strong>复合指令：</strong>用 <code>+</code> 或 <code>-</code> 连接</p>
+<p style="margin-top: 8px;"><strong>示例：</strong><code>2d6+3</code> <code>1d20+5</code> <code>4d8+1d4+2</code> <code>3d6-1</code></p>
+<p style="margin-top: 8px;"><strong>优势 / 劣势：</strong>整条指令连投两次，取较高（或较低）的一次，调整值只加一次。两项都勾选则互相抵消。</p>
+<p style="margin-top: 8px;">点击左侧任意一条历史，可在这里回看它的明细。</p>
+</div>
+</div>
+</div>
+</section>
+<!-- ============ 动作模式 ============ -->
+<section class="panel" id="action-panel">
+<div class="col-left">
+<div class="card card-history card-scroll">
+<div class="card-title">
+<span>动作列表</span>
+<span class="spacer"></span>
+<span class="save-state" id="save-state"></span>
+</div>
+<div class="opts-bar">
+<span class="scope-label">模式</span>
+<label class="chk"><input type="checkbox" id="chk-adv-act" /> 优势</label>
+<label class="chk"><input type="checkbox" id="chk-dis-act" /> 劣势</label>
+<span class="scope-sep">应用于</span>
+<label class="chk"><input type="checkbox" id="chk-scope-main" /> 主指令</label>
+<label class="chk"><input type="checkbox" id="chk-scope-sub" /> 副指令</label>
+<span class="opts-hint normal" id="hint-act"></span>
+</div>
+<div class="scroll-area">
+<div class="action-head" id="action-head">
+<span class="h-name">动作名称</span>
+<span class="h-btn"></span>
+<span class="h-main">主指令（必填）</span>
+<span class="h-mres">结果</span>
+<span class="h-sub">副指令（选填）</span>
+<span class="h-sres">结果</span>
+</div>
+<div class="action-list" id="action-list"></div>
+</div>
+</div>
+</div>
+<div class="col-right">
+<div class="card card-result card-fixed">
+<div class="card-title">当前结果</div>
+<div class="result-total" id="action-total">--</div>
+<div class="result-sub result-name" id="action-sub">等待操作...</div>
+<div class="result-detail" id="action-detail"></div>
+</div>
+<div class="card card-help card-scroll">
+<div class="help-info">
+<h3>🎯 动作模式说明</h3>
+<p>每行 = 一个动作：<strong>主指令</strong>必填（如命中判定），<strong>副指令</strong>选填（如伤害），点一次"掷骰"同步出两个结果。</p>
+<ul style="margin-left: 18px; margin-top: 6px;">
+<li>结果同时显示在行内的两个徽标上</li>
+<li>名称与指令自动保存到本机，刷新不丢</li>
+<li><strong>优势 / 劣势可指定适用范围</strong>：如只勾「主指令」，则命中吃优劣势、伤害正常投（默认如此）</li>
+</ul>
+<p style="margin-top: 8px;"><strong>示例：</strong></p>
+<ul style="margin-left: 18px;">
+<li>长剑 → 主 <code>1d20+5</code>，副 <code>1d8+3</code></li>
+<li>火焰箭 → 主 <code>1d20+7</code>，副 <code>1d10</code></li>
+</ul>
+</div>
+</div>
+</div>
+</section>
+</main>
+</div>
+<script>
+'use strict';
+/* ================= 掷骰核心（纯逻辑，无 DOM 依赖） ================= */
+function sumArr(arr) {
+return arr.reduce(function (a, b) { return a + b; }, 0);
+}
+const DiceRoller = {
+rollDice(sides) {
+return Math.floor(Math.random() * sides) + 1;
+},
+/* 单次完整投掷：只产出原始事实，所有合计值一律由 rolls 推导，不存副本 */
+rollPass(cmd) {
+const text = String(cmd).toLowerCase().replace(/\s/g, '');
+const details = [];
+let pureModifier = 0;
+// 注意：这里必须用箭头函数，普通 function 回调在严格模式下 this 为 undefined
+text.split('+').forEach((part) => {
+const negativeParts = part.split('-');
+const mainPart = negativeParts[0];
+if (mainPart) {
+const diceMatch = mainPart.match(/^(\d*)d(\d+)([+-]\d+)?$/);
+if (diceMatch) {
+const count = diceMatch[1] ? parseInt(diceMatch[1], 10) : 1;
+const sides = parseInt(diceMatch[2], 10);
+const modifier = diceMatch[3] ? parseInt(diceMatch[3], 10) : 0;
+const rolls = [];
+for (let i = 0; i < count; i++) rolls.push(this.rollDice(sides));
+details.push({ expression: mainPart, rolls: rolls, modifier: modifier });
+} else {
+const numMatch = mainPart.match(/^-?(\d+)$/);
+if (numMatch) pureModifier += parseInt(numMatch[1], 10);
+}
+}
+for (let i = 1; i < negativeParts.length; i++) {
+const subPart = negativeParts[i];
+if (!subPart) continue;
+const diceMatch = subPart.match(/^(\d*)d(\d+)([+-]\d+)?$/);
+if (diceMatch) {
+const count = diceMatch[1] ? parseInt(diceMatch[1], 10) : 1;
+const sides = parseInt(diceMatch[2], 10);
+const modifier = diceMatch[3] ? parseInt(diceMatch[3], 10) : 0;
+const rolls = [];
+for (let j = 0; j < count; j++) rolls.push(this.rollDice(sides));
+details.push({ expression: '-' + subPart, rolls: rolls, modifier: modifier });
+} else {
+const numMatch = subPart.match(/^(\d+)$/);
+if (numMatch) pureModifier -= parseInt(numMatch[1], 10);
+}
+}
+});
+return { details: details, modifier: pureModifier };
+},
+/* mode: 'normal' | 'adv' | 'dis' */
+/* mode: 'normal' | 'adv' | 'dis' | 'cancel'
+   result.mode   = 实际投掷模式（cancel 归为 normal）
+   result.uiMode = 界面勾选态（含 cancel），仅供打标，避免"相抵"时用户看不出状态 */
+parseCommand(cmd, mode) {
+mode = mode || 'normal';
+const uiMode = mode;
+mode = rollMode(mode);
+const p1 = this.rollPass(cmd);
+if (mode === 'normal') {
+return { mode: 'normal', uiMode: uiMode, passes: [p1], pickedIndex: 0 };
+}
+const p2 = this.rollPass(cmd);
+const passes = [p1, p2];
+let picked = 0;
+const d1 = this.diceSum(p1);
+const d2 = this.diceSum(p2);
+if (mode === 'adv') picked = d2 > d1 ? 1 : 0;
+else picked = d2 < d1 ? 1 : 0;
+return { mode: mode, uiMode: uiMode, passes: passes, pickedIndex: picked };
+},
+/* 以下三个读数函数全部现场推导，任何地方都不存它们的副本 */
+diceSum(pass) {
+return pass.details.reduce(function (acc, d) { return acc + sumArr(d.rolls); }, 0);
+},
+modSum(pass) {
+return pass.details.reduce(function (acc, d) { return acc + d.modifier; }, 0) + pass.modifier;
+},
+totalOf(result) {
+const pass = result.passes[result.pickedIndex];
+return this.diceSum(pass) + this.modSum(pass);
+}
+};
+/* ================= 优势 / 劣势状态 ================= */
+const MODE_LABEL = { adv: '优势', dis: '劣势', cancel: '优劣相抵', normal: '正常' };
+/* 界面勾选态 → 内部模式；两个都勾 = 相抵 */
+function getMode(scope) {
+const adv = document.getElementById('chk-adv-' + scope).checked;
+const dis = document.getElementById('chk-dis-' + scope).checked;
+if (adv && dis) return 'cancel';
+if (adv) return 'adv';
+if (dis) return 'dis';
+return 'normal';
+}
+function rollMode(mode) {
+return mode === 'cancel' ? 'normal' : mode;
+}
+/* 适用范围（仅动作模式）：优劣势作用在哪些指令上。
+   D&D 实战里优劣势只跟命中挂钩，伤害骰不吃，所以范围要能单独选 */
+function getScope() {
+return {
+main: document.getElementById('chk-scope-main').checked,
+sub: document.getElementById('chk-scope-sub').checked
+};
+}
+/* 每条指令各自的生效模式 = 全局模式 × 该指令是否在适用范围内 */
+function modeFor(kind) {
+const base = getMode('act');
+if (base === 'normal') return 'normal';
+if (!getScope()[kind]) return 'normal';
+return base;
+}
+function scopeText() {
+const s = getScope();
+const parts = [];
+if (s.main) parts.push('主指令');
+if (s.sub) parts.push('副指令');
+return parts.join('与');
+}
+function modeTagHTML(mode) {
+if (mode === 'normal') return '';
+return '<span class="mode-tag ' + mode + '">' + MODE_LABEL[mode] + '</span>';
+}
+function updateModeHint(scope) {
+const mode = getMode(scope);
+const el = document.getElementById('hint-' + scope);
+if (!el) return;
+if (scope === 'act') {
+const target = scopeText();
+if (mode === 'normal') {
+el.className = 'opts-hint normal';
+el.textContent = '未启用，主副指令均正常投掷';
+} else if (!target) {
+// 勾了模式却没选适用范围 = 典型的「勾了却不生效」，必须显式警告
+el.className = 'opts-hint warn';
+el.textContent = '⚠ 已勾选' + MODE_LABEL[mode] + '，但未指定适用范围，当前按正常投掷';
+} else if (mode === 'cancel') {
+el.className = 'opts-hint';
+el.textContent = '优势与劣势已抵消，按正常投掷';
+} else {
+el.className = 'opts-hint normal';
+// 主副都勾时没有"其余"，不能再补一句；只勾一个时才点名另一个正常投
+const s = getScope();
+if (s.main && s.sub) {
+el.textContent = MODE_LABEL[mode] + '应用于' + target + '，均连投两次取' + (mode === 'adv' ? '高' : '低');
+} else if (s.main) {
+el.textContent = MODE_LABEL[mode] + '仅应用于主指令，副指令正常投掷';
+} else {
+el.textContent = MODE_LABEL[mode] + '仅应用于副指令，主指令正常投掷';
+}
+}
+return;
+}
+if (mode === 'normal') {
+el.className = 'opts-hint normal';
+el.textContent = '未启用，正常投掷';
+} else if (mode === 'cancel') {
+el.className = 'opts-hint';
+el.textContent = '优势与劣势已抵消，按正常投掷';
+} else {
+el.className = 'opts-hint normal';
+el.textContent = '已启用' + MODE_LABEL[mode] + '：连投两次取' + (mode === 'adv' ? '高' : '低');
+}
+}
+/* ================= 软上限确认 ================= */
+const ROLL_LIMITS = {
+maxCountPerTerm: 100,
+maxSidesPerTerm: 10000,
+maxTotalDice: 500
+};
+/* entries: [{cmd, mode}] —— 每条指令各自的倍率（优势/劣势是投两次） */
+function getLimitWarning(entries) {
+let maxCount = 0;
+let maxSides = 0;
+let totalDice = 0;
+(entries || []).forEach(function (entry) {
+const terms = String(entry.cmd || '').toLowerCase().replace(/\s/g, '').match(/\d*d\d+/g) || [];
+let countSum = 0;
+terms.forEach(function (term) {
+const m = term.match(/^(\d*)d(\d+)$/);
+if (!m) return;
+const count = m[1] ? parseInt(m[1], 10) : 1;
+const sides = parseInt(m[2], 10);
+if (count > maxCount) maxCount = count;
+if (sides > maxSides) maxSides = sides;
+countSum += count;
+});
+const times = (entry.mode === 'adv' || entry.mode === 'dis') ? 2 : 1;
+totalDice += countSum * times;
+});
+const reasons = [];
+if (maxCount > ROLL_LIMITS.maxCountPerTerm) reasons.push('单次骰子数量 ' + maxCount + ' 较多');
+if (maxSides > ROLL_LIMITS.maxSidesPerTerm) reasons.push('骰子面数 ' + maxSides + ' 较大');
+if (totalDice > ROLL_LIMITS.maxTotalDice) reasons.push('合计骰子数量 ' + totalDice + ' 较多');
+return reasons.length ? reasons.join('，') : null;
+}
+function confirmLargeRoll(entries) {
+const reason = getLimitWarning(entries);
+if (!reason) return true;
+const cmds = (entries || []).map(function (e) { return e.cmd; }).join(' / ');
+return window.confirm('该指令规模较大（' + reason + '），运算可能需要一点时间。\n\n确认是需要投掷【' + cmds + '】么？');
+}
+/* ================= 本地存储（失败要可见，不能静默） ================= */
+const Store = {
+available() {
+try {
+const k = '__dice_probe__';
+localStorage.setItem(k, '1');
+localStorage.removeItem(k);
+return true;
+} catch (e) {
+return false;
+}
+},
+get(key, fallback) {
+try {
+const raw = localStorage.getItem(key);
+return raw ? JSON.parse(raw) : fallback;
+} catch (e) {
+return fallback;
+}
+},
+set(key, value) {
+try {
+localStorage.setItem(key, JSON.stringify(value));
+return true;
+} catch (e) {
+return false;
+}
+}
+};
+const HISTORY_KEY = 'dice-roller.history.v2';
+const HISTORY_KEY_OLD = 'dice-roller.history.v1';
+const ACTIONS_KEY = 'dice-roller.actions.v2';
+const ACTIONS_KEY_OLD = 'dice-roller.actions.v1';
+const SETTINGS_KEY = 'dice-roller.settings.v1';
+const HISTORY_MAX = 100;
+const ACTION_ROWS = 10;
+const storageOK = Store.available();
+/* 旧版历史迁移：v1 存的是 {cmd,total,details:[{expression,rolls,modifier}],time} */
+function loadHistory() {
+let list = storageOK ? Store.get(HISTORY_KEY, null) : null;
+if (!list && storageOK) {
+const old = Store.get(HISTORY_KEY_OLD, null);
+if (Array.isArray(old) && old.length) {
+list = old.map(function (item) {
+return {
+cmd: item.cmd,
+total: item.total,
+mode: 'normal',
+pickedIndex: 0,
+time: item.time,
+passes: [{
+details: (item.details || []).map(function (d) {
+return { expression: d.expression, rolls: d.rolls || [], modifier: d.modifier || 0 };
+}),
+modifier: 0
+}]
+};
+}).reverse();
+}
+}
+if (!Array.isArray(list)) list = [];
+return list.filter(function (e) { return e && Array.isArray(e.passes) && e.passes.length; });
+}
+let history = loadHistory();
+/* 旧版动作迁移：v1 存的是 {name, command} → 主指令 */
+function loadActions() {
+let list = storageOK ? Store.get(ACTIONS_KEY, null) : null;
+if (!list && storageOK) {
+const old = Store.get(ACTIONS_KEY_OLD, null);
+if (Array.isArray(old)) {
+list = old.map(function (item) {
+return { name: item.name || '', main: item.command || '', sub: '' };
+});
+}
+}
+if (!Array.isArray(list)) list = [];
+const out = [];
+for (let i = 0; i < ACTION_ROWS; i++) out.push(list[i] || { name: '', main: '', sub: '' });
+return out;
+}
+let settings = storageOK ? Store.get(SETTINGS_KEY, { cmd: {}, act: {} }) : { cmd: {}, act: {} };
+if (!settings || typeof settings !== 'object') settings = { cmd: {}, act: {} };
+if (!settings.cmd) settings.cmd = {};
+if (!settings.act) settings.act = {};
+/* ================= 渲染：明细只写一份 ================= */
+/* 每个 pass 压成一行：骰组 chips + 骰点小计（+采用标记） */
+function passRowHTML(pass, opts) {
+opts = opts || {};
+const chips = pass.details.map(function (d) {
+const pts = d.rolls.length > 1 ? d.rolls.join(',') : String(d.rolls[0]);
+let expr = d.expression;
+const mod = d.modifier !== 0 ? (d.modifier > 0 ? '+' : '') + d.modifier : '';
+if (mod) expr += mod;
+return '<span class="chip" title="' + escapeHTML(d.expression + ' 掷出 ' + d.rolls.join(', ') +
+(d.modifier ? '，调整值 ' + d.modifier : '')) + ')"><i>' + escapeHTML(expr) + '</i><b>' + pts + '</b></span>';
+}).join('');
+const sum = DiceRoller.diceSum(pass);
+const mark = opts.mark
+? '<span class="pass-mark' + (opts.mark === 'drop' ? ' drop' : '') + '">' +
+(opts.mark === 'drop' ? '未采用' : '采用') + '</span>'
+: '';
+return '<div class="pass-row' + (opts.used ? ' used' : '') + (opts.single ? ' single' : '') + '">' +
+'<span class="pass-label">' + (opts.label || '骰点') + '</span>' +
+'<span class="chips">' + (chips || '<span style="color:#bbb;">无骰组</span>') + '</span>' +
+'<span class="pass-sum">' + sum + '</span>' + mark +
+'</div>';
+}
+function buildDetailHTML(result) {
+const mode = result.mode || 'normal';
+const dice = DiceRoller.diceSum(result.passes[result.pickedIndex]);
+const mod = DiceRoller.modSum(result.passes[result.pickedIndex]);
+const total = DiceRoller.totalOf(result);
+const modText = mod !== 0 ? '骰点 ' + dice + ' + 调整值 ' + (mod > 0 ? '+' : '') + mod : '骰点 ' + dice;
+if (mode === 'normal') {
+return passRowHTML(result.passes[result.pickedIndex || 0], { label: '骰点', single: true }) +
+'<div class="final-row">' + modText + ' &rarr; <b>' + total + '</b></div>';
+}
+const label = MODE_LABEL[mode];
+let html = '';
+result.passes.forEach(function (p, i) {
+const used = i === result.pickedIndex;
+html += passRowHTML(p, {
+label: '第' + (i + 1) + '次',
+used: used,
+mark: used ? 'pick' : 'drop'
+});
+});
+html += '<div class="final-row">' + label + '取' + (mode === 'adv' ? '高' : '低') + '：' + modText +
+' &rarr; <b>' + total + '</b></div>';
+return html;
+}
+function escapeHTML(str) {
+return String(str).replace(/[&<>"']/g, function (c) {
+return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+});
+}
+function showResult(scope, titleText, result) {
+const totalEl = document.getElementById(scope + '-total');
+const subEl = document.getElementById(scope + '-sub');
+const detailEl = document.getElementById(scope + '-detail');
+if (!totalEl) return;
+if (!result) {
+totalEl.textContent = '--';
+subEl.textContent = titleText;
+detailEl.innerHTML = '';
+return;
+}
+totalEl.innerHTML = DiceRoller.totalOf(result) + modeTagHTML(result.uiMode || result.mode || 'normal');
+subEl.textContent = titleText;
+detailEl.innerHTML = buildDetailHTML(result);
+}
+function showError(scope, msg) {
+const totalEl = document.getElementById(scope + '-total');
+const subEl = document.getElementById(scope + '-sub');
+const detailEl = document.getElementById(scope + '-detail');
+totalEl.textContent = '--';
+subEl.innerHTML = '<span class="error-msg">' + msg + '</span>';
+detailEl.innerHTML = '';
+}
+/* ================= 历史记录 ================= */
+function historyDetailText(entry) {
+const pass = entry.passes[entry.pickedIndex || 0];
+return pass.details.map(function (d) {
+const m = d.modifier ? ' (' + (d.modifier > 0 ? '+' : '') + d.modifier + ')' : '';
+return d.expression + ': [' + d.rolls.join(', ') + ']' + m;
+}).join('　');
+}
+function renderHistory() {
+const list = document.getElementById('history-list');
+const countEl = document.getElementById('history-count');
+countEl.textContent = history.length ? '共 ' + history.length + ' 条' : '';
+if (!history.length) {
+list.innerHTML = '<div class="empty-tip">还没有投掷记录，掷一次试试。</div>';
+return;
+}
+list.innerHTML = history.map(function (entry, i) {
+const tag = (entry.mode && entry.mode !== 'normal') ? modeTagHTML(entry.mode) : '';
+return '<div class="history-item" data-index="' + i + '">' +
+'<div class="history-head">' +
+'<span class="h-index">#' + (history.length - i) + '</span>' +
+'<span class="h-cmd">' + escapeHTML(entry.cmd) + '</span>' +
+tag +
+'<span class="h-total">' + entry.total + '</span>' +
+'<span class="h-time">' + escapeHTML(entry.time) + '</span>' +
+'</div>' +
+'<div class="h-detail">' + escapeHTML(historyDetailText(entry)) + '</div>' +
+'</div>';
+}).join('');
+}
+function pushHistory(cmd, result) {
+history.unshift({
+cmd: cmd,
+total: DiceRoller.totalOf(result),
+mode: result.uiMode || result.mode,
+pickedIndex: result.pickedIndex,
+time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+passes: result.passes.map(function (p) {
+return {
+details: p.details.map(function (d) {
+return { expression: d.expression, rolls: d.rolls, modifier: d.modifier };
+}),
+modifier: p.modifier
+};
+})
+});
+if (history.length > HISTORY_MAX) history.length = HISTORY_MAX;
+if (storageOK) Store.set(HISTORY_KEY, history);
+renderHistory();
+const list = document.getElementById('history-list');
+list.scrollTop = 0;
+list.querySelectorAll('.history-item').forEach(function (el) { el.classList.remove('active'); });
+const first = list.querySelector('.history-item');
+if (first) first.classList.add('active');
+}
+function clearHistory() {
+if (!history.length) return;
+if (!window.confirm('确定清空全部 ' + history.length + ' 条投掷历史吗？')) return;
+history = [];
+if (storageOK) Store.set(HISTORY_KEY, history);
+renderHistory();
+showResult('command', '已清空历史', null);
+}
+function showHistoryAt(index) {
+const entry = history[index];
+if (!entry) return;
+document.querySelectorAll('#history-list .history-item').forEach(function (el, i) {
+el.classList.toggle('active', i === index);
+});
+showResult('command', '历史 #' + (history.length - index) + '　' + entry.cmd, entry);
+}
+/* ================= 动作行 ================= */
+function buildActionRow(index, data) {
+const row = document.createElement('div');
+row.className = 'action-row';
+row.dataset.index = String(index);
+row.innerHTML =
+'<input type="text" class="a-name" placeholder="动作名称 ' + (index + 1) + '" value="' + escapeHTML(data.name || '') + '" />' +
+'<button class="action-btn a-btn" type="button">掷骰</button>' +
+'<input type="text" class="a-main" placeholder="主指令（如 1d20+5）" value="' + escapeHTML(data.main || '') + '" />' +
+'<div class="action-result a-mres">--</div>' +
+'<input type="text" class="a-sub" placeholder="副指令（选填，如 1d8+3）" value="' + escapeHTML(data.sub || '') + '" />' +
+'<div class="action-result sub a-sres">--</div>';
+return row;
+}
+function initActionRows() {
+const list = document.getElementById('action-list');
+const saved = loadActions();
+const frag = document.createDocumentFragment();
+for (let i = 0; i < ACTION_ROWS; i++) frag.appendChild(buildActionRow(i, saved[i]));
+list.innerHTML = '';
+list.appendChild(frag);
+updateSaveState(storageOK ? '已载入本机保存' : '');
+}
+function collectActions() {
+return Array.prototype.map.call(document.querySelectorAll('#action-list .action-row'), function (row) {
+return {
+name: row.querySelector('.a-name').value,
+main: row.querySelector('.a-main').value,
+sub: row.querySelector('.a-sub').value
+};
+});
+}
+let saveTimer = null;
+function scheduleSaveActions() {
+if (!storageOK) return;
+if (saveTimer) clearTimeout(saveTimer);
+saveTimer = setTimeout(function () {
+const ok = Store.set(ACTIONS_KEY, collectActions());
+updateSaveState(ok ? '已保存 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false }) : '保存失败');
+}, 400);
+}
+function updateSaveState(text) {
+const el = document.getElementById('save-state');
+if (!el) return;
+if (!storageOK) {
+el.className = 'save-state warn';
+el.textContent = '⚠ 本机无法保存';
+return;
+}
+el.className = 'save-state';
+el.textContent = text ? '✓ ' + text : '';
+}
+function saveSettings() {
+if (!storageOK) return;
+settings.cmd = { adv: document.getElementById('chk-adv-cmd').checked, dis: document.getElementById('chk-dis-cmd').checked };
+settings.act = {
+adv: document.getElementById('chk-adv-act').checked,
+dis: document.getElementById('chk-dis-act').checked,
+scopeMain: document.getElementById('chk-scope-main').checked,
+scopeSub: document.getElementById('chk-scope-sub').checked
+};
+Store.set(SETTINGS_KEY, settings);
+}
+/* ================= 交互 ================= */
+function switchMode(mode) {
+document.getElementById('btn-mode-command').classList.toggle('active', mode === 'command');
+document.getElementById('btn-mode-action').classList.toggle('active', mode === 'action');
+document.getElementById('command-panel').classList.toggle('active', mode === 'command');
+document.getElementById('action-panel').classList.toggle('active', mode === 'action');
+}
+function executeCommand() {
+const input = document.getElementById('command-input');
+const cmd = input.value.trim();
+const mode = getMode('cmd');
+if (!cmd) {
+showError('command', '请输入掷骰指令');
+return;
+}
+if (!confirmLargeRoll([{ cmd: cmd, mode: mode }])) {
+showError('command', '已取消掷骰');
+return;
+}
+let result;
+try {
+result = DiceRoller.parseCommand(cmd, mode);
+} catch (e) {
+showError('command', '指令格式错误，请检查输入');
+return;
+}
+if (!result.passes[0].details.length) {
+showError('command', '未识别到掷骰指令，格式示例：2d6+3');
+return;
+}
+showResult('command', '指令：' + cmd, result);
+pushHistory(cmd, result);
+}
+function executeAction(index) {
+const row = document.querySelectorAll('#action-list .action-row')[index];
+if (!row) return;
+const nameInput = row.querySelector('.a-name');
+const mainInput = row.querySelector('.a-main');
+const subInput = row.querySelector('.a-sub');
+const mainBadge = row.querySelector('.a-mres');
+const subBadge = row.querySelector('.a-sres');
+const actionName = nameInput.value.trim() || ('动作 ' + (index + 1));
+const mainCmd = mainInput.value.trim();
+const subCmd = subInput.value.trim();
+// 主 / 副 各自算一次生效模式（全局模式 × 该指令是否在适用范围内）
+const mainMode = modeFor('main');
+const subMode = modeFor('sub');
+if (!mainCmd) {
+showError('action', '第 ' + (index + 1) + ' 行还没填主指令');
+return;
+}
+const entries = [{ cmd: mainCmd, mode: mainMode }];
+if (subCmd) entries.push({ cmd: subCmd, mode: subMode });
+if (!confirmLargeRoll(entries)) {
+showError('action', '已取消掷骰');
+return;
+}
+let mainResult = null;
+let subResult = null;
+try {
+mainResult = DiceRoller.parseCommand(mainCmd, mainMode);
+if (subCmd) subResult = DiceRoller.parseCommand(subCmd, subMode);
+} catch (e) {
+showError('action', '指令格式错误，请检查输入');
+return;
+}
+if (!mainResult.passes[0].details.length) {
+showError('action', '主指令未识别，格式示例：1d20+5');
+return;
+}
+mainBadge.textContent = DiceRoller.totalOf(mainResult);
+const subOK = subResult && subResult.passes[0].details.length > 0;
+if (subOK) {
+subBadge.textContent = DiceRoller.totalOf(subResult);
+subBadge.classList.add('filled');
+} else {
+subBadge.textContent = subCmd ? '无效' : '--';
+subBadge.classList.remove('filled');
+}
+const totalEl = document.getElementById('action-total');
+const subEl = document.getElementById('action-sub');
+const detailEl = document.getElementById('action-detail');
+totalEl.innerHTML = DiceRoller.totalOf(mainResult) + modeTagHTML(mainResult.uiMode || mainResult.mode);
+// 只显示加粗的动作名称；指令文本由 chips 承载，不再重复打印
+subEl.textContent = actionName;
+detailEl.innerHTML =
+'<div class="blk"><div class="blk-head" data-tag="主"></div>' + buildDetailHTML(mainResult) + '</div>' +
+(subOK
+? '<div class="blk"><div class="blk-head sub" data-tag="副"></div>' + buildDetailHTML(subResult) + '</div>'
+: '<div class="blk-muted">未设置副指令</div>');
+}
+/* ================= 事件绑定（全部走委托，只绑一次） ================= */
+document.addEventListener('DOMContentLoaded', function () {
+initActionRows();
+renderHistory();
+document.getElementById('chk-adv-cmd').checked = !!settings.cmd.adv;
+document.getElementById('chk-dis-cmd').checked = !!settings.cmd.dis;
+document.getElementById('chk-adv-act').checked = !!settings.act.adv;
+document.getElementById('chk-dis-act').checked = !!settings.act.dis;
+// 适用范围默认「只勾主指令」：D&D 实战里优劣势只跟命中挂钩，伤害骰不吃
+document.getElementById('chk-scope-main').checked = settings.act.scopeMain !== false;
+document.getElementById('chk-scope-sub').checked = !!settings.act.scopeSub;
+updateModeHint('cmd');
+updateModeHint('act');
+document.getElementById('btn-mode-command').addEventListener('click', function () { switchMode('command'); });
+document.getElementById('btn-mode-action').addEventListener('click', function () { switchMode('action'); });
+document.getElementById('btn-roll-command').addEventListener('click', executeCommand);
+document.getElementById('command-input').addEventListener('keypress', function (e) {
+if (e.key === 'Enter') executeCommand();
+});
+['chk-adv-cmd', 'chk-dis-cmd', 'chk-adv-act', 'chk-dis-act', 'chk-scope-main', 'chk-scope-sub'].forEach(function (id) {
+document.getElementById(id).addEventListener('change', function () {
+updateModeHint('cmd');
+updateModeHint('act');
+saveSettings();
+});
+});
+document.getElementById('btn-clear-history').addEventListener('click', clearHistory);
+document.getElementById('history-list').addEventListener('click', function (e) {
+const item = e.target.closest('.history-item');
+if (item) showHistoryAt(parseInt(item.dataset.index, 10));
+});
+const actionList = document.getElementById('action-list');
+actionList.addEventListener('click', function (e) {
+const btn = e.target.closest('.action-btn');
+if (!btn) return;
+const row = btn.closest('.action-row');
+if (row) executeAction(parseInt(row.dataset.index, 10));
+});
+actionList.addEventListener('input', scheduleSaveActions);
+actionList.addEventListener('keydown', function (e) {
+if (e.key !== 'Enter') return;
+const row = e.target.closest('.action-row');
+if (row) executeAction(parseInt(row.dataset.index, 10));
+});
+// URL 参数预热：?cmd=2d6+3 打开即投（为将来的跨工具调用留口子）
+const preset = new URLSearchParams(location.search).get('cmd');
+if (preset) {
+document.getElementById('command-input').value = preset;
+executeCommand();
+}
+});
+</script>
+</body>
+</html>
