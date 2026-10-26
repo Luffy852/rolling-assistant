@@ -794,6 +794,23 @@ const DiceRoller = {
 rollDice(sides) {
 return Math.floor(Math.random() * sides) + 1;
 },
+/* 解析单个项：骰组 → {kind:'dice'}，纯数字 → {kind:'num'}
+   sign = +1（split('+') 的段）/ -1（段内 split('-') 的后续部分）
+   注意：必须返回对象而非直接改外部数组，否则正负两段的处理会各写一遍解析逻辑 */
+parseTerm(expr, sign) {
+const diceMatch = expr.match(/^(\d*)d(\d+)([+-]\d+)?$/);
+if (diceMatch) {
+const count = diceMatch[1] ? parseInt(diceMatch[1], 10) : 1;
+const sides = parseInt(diceMatch[2], 10);
+const modifier = diceMatch[3] ? parseInt(diceMatch[3], 10) : 0;
+const rolls = [];
+for (let i = 0; i < count; i++) rolls.push(this.rollDice(sides));
+return { kind: 'dice', expression: (sign < 0 ? '-' : '') + expr, rolls: rolls, modifier: modifier };
+}
+const numMatch = expr.match(/^-?(\d+)$/);
+if (numMatch) return { kind: 'num', value: sign * parseInt(numMatch[1], 10) };
+return null;
+},
 /* 单次完整投掷：只产出原始事实，所有合计值一律由 rolls 推导，不存副本 */
 rollPass(cmd) {
 const text = String(cmd).toLowerCase().replace(/\s/g, '');
@@ -801,42 +818,16 @@ const details = [];
 let pureModifier = 0;
 // 注意：这里必须用箭头函数，普通 function 回调在严格模式下 this 为 undefined
 text.split('+').forEach((part) => {
-const negativeParts = part.split('-');
-const mainPart = negativeParts[0];
-if (mainPart) {
-const diceMatch = mainPart.match(/^(\d*)d(\d+)([+-]\d+)?$/);
-if (diceMatch) {
-const count = diceMatch[1] ? parseInt(diceMatch[1], 10) : 1;
-const sides = parseInt(diceMatch[2], 10);
-const modifier = diceMatch[3] ? parseInt(diceMatch[3], 10) : 0;
-const rolls = [];
-for (let i = 0; i < count; i++) rolls.push(this.rollDice(sides));
-details.push({ expression: mainPart, rolls: rolls, modifier: modifier });
-} else {
-const numMatch = mainPart.match(/^-?(\d+)$/);
-if (numMatch) pureModifier += parseInt(numMatch[1], 10);
-}
-}
-for (let i = 1; i < negativeParts.length; i++) {
-const subPart = negativeParts[i];
-if (!subPart) continue;
-const diceMatch = subPart.match(/^(\d*)d(\d+)([+-]\d+)?$/);
-if (diceMatch) {
-const count = diceMatch[1] ? parseInt(diceMatch[1], 10) : 1;
-const sides = parseInt(diceMatch[2], 10);
-const modifier = diceMatch[3] ? parseInt(diceMatch[3], 10) : 0;
-const rolls = [];
-for (let j = 0; j < count; j++) rolls.push(this.rollDice(sides));
-details.push({ expression: '-' + subPart, rolls: rolls, modifier: modifier });
-} else {
-const numMatch = subPart.match(/^(\d+)$/);
-if (numMatch) pureModifier -= parseInt(numMatch[1], 10);
-}
-}
+part.split('-').forEach((sub, i) => {
+if (!sub) return;
+const term = this.parseTerm(sub, i === 0 ? 1 : -1);
+if (!term) return;
+if (term.kind === 'dice') details.push({ expression: term.expression, rolls: term.rolls, modifier: term.modifier });
+else pureModifier += term.value;
+});
 });
 return { details: details, modifier: pureModifier };
 },
-/* mode: 'normal' | 'adv' | 'dis' */
 /* mode: 'normal' | 'adv' | 'dis' | 'cancel'
    result.mode   = 实际投掷模式（cancel 归为 normal）
    result.uiMode = 界面勾选态（含 cancel），仅供打标，避免"相抵"时用户看不出状态 */
@@ -909,46 +900,45 @@ function modeTagHTML(mode) {
 if (mode === 'normal') return '';
 return '<span class="mode-tag ' + mode + '">' + MODE_LABEL[mode] + '</span>';
 }
+/* 打标一律读 uiMode（界面勾选态），避免"相抵"被提前归一成 normal 后标签消失 */
+function uiModeOf(result) {
+return result.uiMode || result.mode || 'normal';
+}
 function updateModeHint(scope) {
 const mode = getMode(scope);
 const el = document.getElementById('hint-' + scope);
 if (!el) return;
+let text;
+let cls = 'opts-hint normal';
 if (scope === 'act') {
+const s = getScope();
 const target = scopeText();
 if (mode === 'normal') {
-el.className = 'opts-hint normal';
-el.textContent = '未启用，主副指令均正常投掷';
+text = '未启用，主副指令均正常投掷';
 } else if (!target) {
 // 勾了模式却没选适用范围 = 典型的「勾了却不生效」，必须显式警告
-el.className = 'opts-hint warn';
-el.textContent = '⚠ 已勾选' + MODE_LABEL[mode] + '，但未指定适用范围，当前按正常投掷';
+cls = 'opts-hint warn';
+text = '⚠ 已勾选' + MODE_LABEL[mode] + '，但未指定适用范围，当前按正常投掷';
 } else if (mode === 'cancel') {
-el.className = 'opts-hint';
-el.textContent = '优势与劣势已抵消，按正常投掷';
+cls = 'opts-hint';
+text = '优势与劣势已抵消，按正常投掷';
+} else if (s.main && s.sub) {
+// 主副都勾时没有"其余"，不能再补一句
+text = MODE_LABEL[mode] + '应用于' + target + '，均连投两次取' + (mode === 'adv' ? '高' : '低');
 } else {
-el.className = 'opts-hint normal';
-// 主副都勾时没有"其余"，不能再补一句；只勾一个时才点名另一个正常投
-const s = getScope();
-if (s.main && s.sub) {
-el.textContent = MODE_LABEL[mode] + '应用于' + target + '，均连投两次取' + (mode === 'adv' ? '高' : '低');
-} else if (s.main) {
-el.textContent = MODE_LABEL[mode] + '仅应用于主指令，副指令正常投掷';
-} else {
-el.textContent = MODE_LABEL[mode] + '仅应用于副指令，主指令正常投掷';
+// 只勾一个时点名另一个，比泛称"其余"明确
+text = MODE_LABEL[mode] + '仅应用于' + (s.main ? '主指令，副指令正常投掷' : '副指令，主指令正常投掷');
 }
-}
-return;
-}
-if (mode === 'normal') {
-el.className = 'opts-hint normal';
-el.textContent = '未启用，正常投掷';
+} else if (mode === 'normal') {
+text = '未启用，正常投掷';
 } else if (mode === 'cancel') {
-el.className = 'opts-hint';
-el.textContent = '优势与劣势已抵消，按正常投掷';
+cls = 'opts-hint';
+text = '优势与劣势已抵消，按正常投掷';
 } else {
-el.className = 'opts-hint normal';
-el.textContent = '已启用' + MODE_LABEL[mode] + '：连投两次取' + (mode === 'adv' ? '高' : '低');
+text = '已启用' + MODE_LABEL[mode] + '：连投两次取' + (mode === 'adv' ? '高' : '低');
 }
+el.className = cls;
+el.textContent = text;
 }
 /* ================= 软上限确认 ================= */
 const ROLL_LIMITS = {
@@ -1032,18 +1022,20 @@ if (!list && storageOK) {
 const old = Store.get(HISTORY_KEY_OLD, null);
 if (Array.isArray(old) && old.length) {
 list = old.map(function (item) {
+const details = (item.details || []).map(function (d) {
+return { expression: d.expression, rolls: d.rolls || [], modifier: d.modifier || 0 };
+});
+// v1 只留了 total 这个派生值，调整值信息实际已丢失。
+// 把「旧 total − 骰点 − 各组调整值」的差额折进 pass.modifier，
+// 使重算结果与原 total 一致——否则列表显示 18、点开却是 13（两份真值打架）
+const diceSum = details.reduce(function (a, d) { return a + sumArr(d.rolls); }, 0);
+const modSum = details.reduce(function (a, d) { return a + d.modifier; }, 0);
 return {
 cmd: item.cmd,
-total: item.total,
 mode: 'normal',
 pickedIndex: 0,
 time: item.time,
-passes: [{
-details: (item.details || []).map(function (d) {
-return { expression: d.expression, rolls: d.rolls || [], modifier: d.modifier || 0 };
-}),
-modifier: 0
-}]
+passes: [{ details: details, modifier: (item.total || 0) - diceSum - modSum }]
 };
 }).reverse();
 }
@@ -1124,28 +1116,36 @@ return String(str).replace(/[&<>"']/g, function (c) {
 return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
 });
 }
-function showResult(scope, titleText, result) {
+/* 结果区渲染的**唯一入口**：指令模式、历史回看、动作模式主/副全部走这里。
+   之前 executeAction 自己拼了一套，与 showResult 平行——改一处必然漏另一处（原则 4）。
+   opts: { title, error, total, mode, blocks: [{tag, sub, result}], muted } */
+function renderResult(scope, opts) {
 const totalEl = document.getElementById(scope + '-total');
 const subEl = document.getElementById(scope + '-sub');
 const detailEl = document.getElementById(scope + '-detail');
 if (!totalEl) return;
-if (!result) {
-totalEl.textContent = '--';
-subEl.textContent = titleText;
-detailEl.innerHTML = '';
-return;
+const failed = !!opts.error;
+totalEl.innerHTML = (failed || opts.total == null)
+? '--'
+: opts.total + modeTagHTML(opts.mode || 'normal');
+// title / error 都可能是用户输入（如指令串），必须转义
+subEl.innerHTML = failed
+? '<span class="error-msg">' + escapeHTML(opts.error) + '</span>'
+: escapeHTML(opts.title || '');
+let html = '';
+if (!failed) {
+(opts.blocks || []).forEach(function (b) {
+const head = b.tag
+? '<div class="blk-head' + (b.sub ? ' sub' : '') + '" data-tag="' + escapeHTML(b.tag) + '"></div>'
+: '';
+html += '<div class="blk">' + head + buildDetailHTML(b.result) + '</div>';
+});
+if (opts.muted) html += '<div class="blk-muted">' + escapeHTML(opts.muted) + '</div>';
 }
-totalEl.innerHTML = DiceRoller.totalOf(result) + modeTagHTML(result.uiMode || result.mode || 'normal');
-subEl.textContent = titleText;
-detailEl.innerHTML = buildDetailHTML(result);
+detailEl.innerHTML = html;
 }
 function showError(scope, msg) {
-const totalEl = document.getElementById(scope + '-total');
-const subEl = document.getElementById(scope + '-sub');
-const detailEl = document.getElementById(scope + '-detail');
-totalEl.textContent = '--';
-subEl.innerHTML = '<span class="error-msg">' + msg + '</span>';
-detailEl.innerHTML = '';
+renderResult(scope, { error: msg });
 }
 /* ================= 历史记录 ================= */
 function historyDetailText(entry) {
@@ -1170,7 +1170,8 @@ return '<div class="history-item" data-index="' + i + '">' +
 '<span class="h-index">#' + (history.length - i) + '</span>' +
 '<span class="h-cmd">' + escapeHTML(entry.cmd) + '</span>' +
 tag +
-'<span class="h-total">' + entry.total + '</span>' +
+// total 不存副本，现场由 passes 推导，保证列表与详情永远是同一个数
+'<span class="h-total">' + DiceRoller.totalOf(entry) + '</span>' +
 '<span class="h-time">' + escapeHTML(entry.time) + '</span>' +
 '</div>' +
 '<div class="h-detail">' + escapeHTML(historyDetailText(entry)) + '</div>' +
@@ -1180,7 +1181,7 @@ tag +
 function pushHistory(cmd, result) {
 history.unshift({
 cmd: cmd,
-total: DiceRoller.totalOf(result),
+// 不存 total：它是派生值，存了就会和 passes 形成两份真值（迁移数据已踩过）
 mode: result.uiMode || result.mode,
 pickedIndex: result.pickedIndex,
 time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
@@ -1208,7 +1209,7 @@ if (!window.confirm('确定清空全部 ' + history.length + ' 条投掷历史�
 history = [];
 if (storageOK) Store.set(HISTORY_KEY, history);
 renderHistory();
-showResult('command', '已清空历史', null);
+renderResult('command', { title: '已清空历史' });
 }
 function showHistoryAt(index) {
 const entry = history[index];
@@ -1216,7 +1217,12 @@ if (!entry) return;
 document.querySelectorAll('#history-list .history-item').forEach(function (el, i) {
 el.classList.toggle('active', i === index);
 });
-showResult('command', '历史 #' + (history.length - index) + '　' + entry.cmd, entry);
+renderResult('command', {
+title: '历史 #' + (history.length - index) + '　' + entry.cmd,
+total: DiceRoller.totalOf(entry),
+mode: entry.mode,
+blocks: [{ result: entry }]
+});
 }
 /* ================= 动作行 ================= */
 function buildActionRow(index, data) {
@@ -1311,7 +1317,12 @@ if (!result.passes[0].details.length) {
 showError('command', '未识别到掷骰指令，格式示例：2d6+3');
 return;
 }
-showResult('command', '指令：' + cmd, result);
+renderResult('command', {
+title: '指令：' + cmd,
+total: DiceRoller.totalOf(result),
+mode: result.uiMode,
+blocks: [{ result: result }]
+});
 pushHistory(cmd, result);
 }
 function executeAction(index) {
@@ -1360,17 +1371,16 @@ subBadge.classList.add('filled');
 subBadge.textContent = subCmd ? '无效' : '--';
 subBadge.classList.remove('filled');
 }
-const totalEl = document.getElementById('action-total');
-const subEl = document.getElementById('action-sub');
-const detailEl = document.getElementById('action-detail');
-totalEl.innerHTML = DiceRoller.totalOf(mainResult) + modeTagHTML(mainResult.uiMode || mainResult.mode);
 // 只显示加粗的动作名称；指令文本由 chips 承载，不再重复打印
-subEl.textContent = actionName;
-detailEl.innerHTML =
-'<div class="blk"><div class="blk-head" data-tag="主"></div>' + buildDetailHTML(mainResult) + '</div>' +
-(subOK
-? '<div class="blk"><div class="blk-head sub" data-tag="副"></div>' + buildDetailHTML(subResult) + '</div>'
-: '<div class="blk-muted">未设置副指令</div>');
+renderResult('action', {
+title: actionName,
+total: DiceRoller.totalOf(mainResult),
+mode: mainResult.uiMode,
+blocks: subOK
+? [{ tag: '主', result: mainResult }, { tag: '副', sub: true, result: subResult }]
+: [{ tag: '主', result: mainResult }],
+muted: subOK ? '' : '未设置副指令'
+});
 }
 /* ================= 事件绑定（全部走委托，只绑一次） ================= */
 document.addEventListener('DOMContentLoaded', function () {
